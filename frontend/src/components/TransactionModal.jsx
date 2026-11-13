@@ -47,7 +47,9 @@ export const TransactionModal = ({ isOpen, onClose, editTransaction = null }) =>
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e) => {
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!title.trim()) {
       setError('Please provide a valid transaction title.');
@@ -68,13 +70,20 @@ export const TransactionModal = ({ isOpen, onClose, editTransaction = null }) =>
       description: description.trim()
     };
 
-    if (editTransaction) {
-      updateTransaction(editTransaction.id, payload);
-    } else {
-      addTransaction(payload);
+    setIsSaving(true);
+    setError('');
+    try {
+      if (editTransaction) {
+        await updateTransaction(editTransaction.id, payload);
+      } else {
+        await addTransaction(payload);
+      }
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Could not save the transaction. Please try again.');
+    } finally {
+      setIsSaving(false);
     }
-
-    onClose();
   };
 
   const categoryOptions = type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
@@ -212,14 +221,16 @@ export const TransactionModal = ({ isOpen, onClose, editTransaction = null }) =>
               type="button"
               onClick={onClose}
               className="btn btn-outline"
+              disabled={isSaving}
             >
               Cancel
             </button>
             <button
               type="submit"
               className="btn btn-primary"
+              disabled={isSaving}
             >
-              {editTransaction ? 'Save Changes' : 'Record Transaction'}
+              {isSaving ? 'Saving...' : (editTransaction ? 'Save Changes' : 'Record Transaction')}
             </button>
           </div>
         </form>
