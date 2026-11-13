@@ -54,11 +54,8 @@ export const FinanceProvider = ({ children }) => {
         api.ai.getHistory()
       ]);
 
-      let connected = false;
-
       // Handle Dashboard
       if (dashRes.status === 'fulfilled' && dashRes.value) {
-        connected = true;
         const d = dashRes.value;
         setDashboardStats({
           total_balance: d.total_balance ?? 0,
@@ -78,29 +75,37 @@ export const FinanceProvider = ({ children }) => {
 
       // Handle Transactions
       if (txRes.status === 'fulfilled' && txRes.value?.transactions) {
-        connected = true;
-        setTransactions(txRes.value.transactions);
+        // The API returns transaction_type; the UI also uses type.
+        const liveTransactions = txRes.value.transactions.map((tx) => ({
+          ...tx,
+          type: tx.type || tx.transaction_type
+        }));
+        setTransactions(liveTransactions);
+      } else if (txRes.status === 'rejected') {
+        console.error('Failed to load transactions from API:', txRes.reason);
+        setError(txRes.reason?.message || 'Could not load transactions from the server.');
       }
 
       // Handle Budgets
       if (budgetRes.status === 'fulfilled' && budgetRes.value?.budgets) {
-        connected = true;
         setBudgets(budgetRes.value.budgets);
       }
 
       // Handle Predictions
       if (predRes.status === 'fulfilled' && predRes.value?.forecast) {
-        connected = true;
         setPredictionData(predRes.value.forecast);
       }
 
       // Handle Chat
       if (chatRes.status === 'fulfilled' && chatRes.value?.messages) {
-        connected = true;
         setChatMessages(chatRes.value.messages);
       }
 
-      setIsBackendConnected(connected);
+      // A successful health check alone is not enough: the transactions API
+      // must also work before we report the finance data as live.
+      const transactionsLoaded = txRes.status === 'fulfilled' && Boolean(txRes.value?.transactions);
+      setIsBackendConnected(transactionsLoaded);
+      if (transactionsLoaded) setError(null);
     } catch (err) {
       console.warn('Backend sync note:', err.message);
       setIsBackendConnected(false);
@@ -192,17 +197,31 @@ export const FinanceProvider = ({ children }) => {
 
   // Transaction Actions
   const addTransaction = async (newTx) => {
-    if (token && isBackendConnected) {
+    // If logged in, always use the server. Never pretend a local-only save
+    // succeeded, because it would disappear after a page refresh.
+    if (token) {
       try {
-        await api.transactions.create(newTx);
+        const result = await api.transactions.create(newTx);
+        if (!result?.transaction) {
+          throw new Error('The server did not confirm that the transaction was saved.');
+        }
+        const saved = {
+          ...result.transaction,
+          type: result.transaction.type || result.transaction.transaction_type
+        };
+        setTransactions(prev => [saved, ...prev.filter(tx => tx.id !== saved.id)]);
+        setIsBackendConnected(true);
+        setError(null);
         await refreshData();
-        return;
+        return saved;
       } catch (err) {
-        console.warn('API transaction add error, falling back to local state:', err);
+        console.error('API transaction add failed:', err);
+        setError(err.message || 'Could not save the transaction to the server.');
+        throw err;
       }
     }
 
-    // Local fallback
+    // Local-only mode is available only when the user is not logged in.
     const created = {
       ...newTx,
       id: `tx-${Date.now()}`,
@@ -210,35 +229,40 @@ export const FinanceProvider = ({ children }) => {
       status: 'Completed'
     };
     setTransactions(prev => [created, ...prev]);
+    return created;
   };
 
   const updateTransaction = async (id, updatedData) => {
-    if (token && isBackendConnected && typeof id === 'number') {
+    if (token && typeof id === 'number') {
       try {
         await api.transactions.update(id, updatedData);
         await refreshData();
         return;
       } catch (err) {
-        console.warn('API update error:', err);
+        console.error('API update failed:', err);
+        setError(err.message || 'Could not update the transaction on the server.');
+        throw err;
       }
     }
 
-    // Local fallback
+    if (token) throw new Error('This saved transaction cannot be updated offline.');
     setTransactions(prev => prev.map(t => (t.id === id ? { ...t, ...updatedData, amount: parseFloat(updatedData.amount) } : t)));
   };
 
   const deleteTransaction = async (id) => {
-    if (token && isBackendConnected && typeof id === 'number') {
+    if (token && typeof id === 'number') {
       try {
         await api.transactions.delete(id);
         await refreshData();
         return;
       } catch (err) {
-        console.warn('API delete error:', err);
+        console.error('API delete failed:', err);
+        setError(err.message || 'Could not delete the transaction on the server.');
+        throw err;
       }
     }
 
-    // Local fallback
+    if (token) throw new Error('This saved transaction cannot be deleted offline.');
     setTransactions(prev => prev.filter(t => t.id !== id));
   };
 
