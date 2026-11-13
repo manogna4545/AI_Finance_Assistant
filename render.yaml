@@ -19,7 +19,7 @@ services:
           name: ai-finance-db
           property: connectionString
       - key: FRONTEND_URL
-        value: https://your-vercel-app.vercel.app
+        value: https://ai-finance-assistant-frontend-plum.vercel.app
 
 databases:
   - name: ai-finance-db

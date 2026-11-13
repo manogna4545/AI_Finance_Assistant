@@ -278,60 +278,64 @@ export const Dashboard = ({ onOpenTransactionModal }) => {
                 </tr>
               </thead>
               <tbody>
-                {recentTransactions.map((tx) => (
-                  <tr key={tx.id}>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <div
+                {recentTransactions.map((tx) => {
+                  const isIncome = (tx.type || tx.transaction_type) === 'income';
+                  const amt = Number(tx.amount || 0);
+                  return (
+                    <tr key={tx.id}>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div
+                            style={{
+                              width: '32px',
+                              height: '32px',
+                              borderRadius: 'var(--radius-sm)',
+                              background: isIncome ? 'var(--income-bg)' : 'var(--expense-bg)',
+                              color: isIncome ? 'var(--income-green)' : 'var(--expense-red)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0
+                            }}
+                          >
+                            {isIncome ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />}
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 600, color: 'var(--text-main)' }}>{tx.title}</div>
+                            {tx.description && (
+                              <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                                {tx.description}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <span
                           style={{
-                            width: '32px',
-                            height: '32px',
-                            borderRadius: 'var(--radius-sm)',
-                            background: tx.type === 'income' ? 'var(--income-bg)' : 'var(--expense-bg)',
-                            color: tx.type === 'income' ? 'var(--income-green)' : 'var(--expense-red)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexShrink: 0
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            padding: '3px 8px',
+                            borderRadius: 'var(--radius-full)',
+                            backgroundColor: 'var(--bg-subtle)',
+                            color: 'var(--brand-forest)',
+                            border: '1px solid var(--border-green)'
                           }}
                         >
-                          {tx.type === 'income' ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />}
-                        </div>
-                        <div>
-                          <div style={{ fontWeight: 600, color: 'var(--text-main)' }}>{tx.title}</div>
-                          {tx.description && (
-                            <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                              {tx.description}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td>
-                      <span
-                        style={{
-                          fontSize: '0.75rem',
-                          fontWeight: 600,
-                          padding: '3px 8px',
-                          borderRadius: 'var(--radius-full)',
-                          backgroundColor: 'var(--bg-subtle)',
-                          color: 'var(--brand-forest)',
-                          border: '1px solid var(--border-green)'
-                        }}
-                      >
-                        {tx.category}
-                      </span>
-                    </td>
-                    <td style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                      {tx.date}
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <span className={tx.type === 'income' ? 'amount-income' : 'amount-expense'}>
-                        {tx.type === 'income' ? '+' : '-'}{currency}{tx.amount.toFixed(2)}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                          {tx.category}
+                        </span>
+                      </td>
+                      <td style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                        {tx.date}
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <span className={isIncome ? 'amount-income' : 'amount-expense'}>
+                          {isIncome ? '+' : '-'}{currency}{amt.toFixed(2)}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

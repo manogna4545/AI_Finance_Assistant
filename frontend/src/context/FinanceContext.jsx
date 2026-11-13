@@ -40,8 +40,9 @@ export const FinanceProvider = ({ children }) => {
   });
 
   // Fetch all live user data from backend
-  const refreshData = useCallback(async () => {
-    if (!token) return;
+  const refreshData = useCallback(async (authTokenOverride) => {
+    const activeToken = authTokenOverride || token || localStorage.getItem('ai_finance_token');
+    if (!activeToken) return;
     setLoading(true);
     setError(null);
 
@@ -53,6 +54,21 @@ export const FinanceProvider = ({ children }) => {
         api.predictions.getPredictions(),
         api.ai.getHistory()
       ]);
+
+      // Check for 401 Unauthorized across responses
+      const isUnauthorized = [dashRes, txRes, budgetRes, predRes, chatRes].some(
+        r => r.status === 'rejected' && r.reason?.status === 401
+      );
+      if (isUnauthorized) {
+        console.warn('API returned 401 Unauthorized during refresh. Session expired.');
+        localStorage.removeItem('ai_finance_token');
+        localStorage.removeItem('ai_finance_user');
+        setToken(null);
+        setIsAuthenticated(false);
+        setUser(INITIAL_USER);
+        setIsBackendConnected(false);
+        return;
+      }
 
       // Handle Dashboard
       if (dashRes.status === 'fulfilled' && dashRes.value) {
@@ -73,22 +89,27 @@ export const FinanceProvider = ({ children }) => {
         }
       }
 
-      // Handle Transactions
+      // Handle Transactions with normalization of type / transaction_type
       if (txRes.status === 'fulfilled' && txRes.value?.transactions) {
-        // The API returns transaction_type; the UI also uses type.
-        const liveTransactions = txRes.value.transactions.map((tx) => ({
-          ...tx,
-          type: tx.type || tx.transaction_type
+        const normalizedTx = txRes.value.transactions.map(t => ({
+          ...t,
+          type: t.type || t.transaction_type || 'expense',
+          transaction_type: t.transaction_type || t.type || 'expense'
         }));
-        setTransactions(liveTransactions);
+        setTransactions(normalizedTx);
       } else if (txRes.status === 'rejected') {
         console.error('Failed to load transactions from API:', txRes.reason);
         setError(txRes.reason?.message || 'Could not load transactions from the server.');
       }
 
-      // Handle Budgets
+      // Handle Budgets with normalization of limit / monthly_limit
       if (budgetRes.status === 'fulfilled' && budgetRes.value?.budgets) {
-        setBudgets(budgetRes.value.budgets);
+        const normalizedBudgets = budgetRes.value.budgets.map(b => ({
+          ...b,
+          limit: b.limit ?? b.monthly_limit ?? 0,
+          monthly_limit: b.monthly_limit ?? b.limit ?? 0
+        }));
+        setBudgets(normalizedBudgets);
       }
 
       // Handle Predictions
@@ -101,8 +122,7 @@ export const FinanceProvider = ({ children }) => {
         setChatMessages(chatRes.value.messages);
       }
 
-      // A successful health check alone is not enough: the transactions API
-      // must also work before we report the finance data as live.
+      // A successful health check and transactions load confirms API Live
       const transactionsLoaded = txRes.status === 'fulfilled' && Boolean(txRes.value?.transactions);
       setIsBackendConnected(transactionsLoaded);
       if (transactionsLoaded) setError(null);
@@ -114,23 +134,55 @@ export const FinanceProvider = ({ children }) => {
     }
   }, [token]);
 
-  // Load live data whenever the stored/login token becomes available.
+  // Initial authentication verification and data sync on load
   useEffect(() => {
-    const savedToken = localStorage.getItem('ai_finance_token');
-    if (!token && savedToken) {
-      setToken(savedToken);
-      setIsAuthenticated(true);
-      return;
-    }
+    let isMounted = true;
+    const initAuth = async () => {
+      const savedToken = localStorage.getItem('ai_finance_token');
+      if (savedToken) {
+        setToken(savedToken);
+        setIsAuthenticated(true);
+        try {
+          await api.checkHealth();
+          if (!isMounted) return;
+          setIsBackendConnected(true);
 
-    if (token) {
-      refreshData();
-    } else {
-      api.checkHealth()
-        .then(() => setIsBackendConnected(true))
-        .catch(() => setIsBackendConnected(false));
-    }
-  }, [token, refreshData]);
+          // Verify token validity with backend /api/auth/me
+          try {
+            const meRes = await api.auth.getProfile();
+            if (meRes?.user && isMounted) {
+              setUser(meRes.user);
+              localStorage.setItem('ai_finance_user', JSON.stringify(meRes.user));
+              await refreshData(savedToken);
+            }
+          } catch (profileErr) {
+            console.warn('Token validation response:', profileErr?.message);
+            if (profileErr?.status === 401) {
+              console.warn('Stored JWT is expired or invalid. Resetting authentication session.');
+              localStorage.removeItem('ai_finance_token');
+              localStorage.removeItem('ai_finance_user');
+              if (isMounted) {
+                setToken(null);
+                setIsAuthenticated(false);
+                setUser(INITIAL_USER);
+              }
+            } else {
+              await refreshData(savedToken);
+            }
+          }
+        } catch {
+          if (isMounted) setIsBackendConnected(false);
+        }
+      } else {
+        // Test backend availability silently
+        api.checkHealth()
+          .then(() => { if (isMounted) setIsBackendConnected(true); })
+          .catch(() => { if (isMounted) setIsBackendConnected(false); });
+      }
+    };
+    initAuth();
+    return () => { isMounted = false; };
+  }, [refreshData]);
 
   // Authentication Actions
   const handleAuthSuccess = (newToken, newUser) => {
@@ -140,7 +192,7 @@ export const FinanceProvider = ({ children }) => {
     localStorage.setItem('ai_finance_token', newToken);
     localStorage.setItem('ai_finance_user', JSON.stringify(newUser));
     setIsBackendConnected(true);
-    setTimeout(() => refreshData(), 100);
+    refreshData(newToken);
   };
 
   const login = async (identifier, password) => {
@@ -163,19 +215,25 @@ export const FinanceProvider = ({ children }) => {
 
   const logout = async () => {
     try {
-      if (token) await api.auth.logout();
+      const activeToken = token || localStorage.getItem('ai_finance_token');
+      if (activeToken) await api.auth.logout();
     } catch {
       // offline logout
     }
     setToken(null);
     setIsAuthenticated(false);
     localStorage.removeItem('ai_finance_token');
+    localStorage.removeItem('ai_finance_user');
     setUser(INITIAL_USER);
+    setTransactions(INITIAL_TRANSACTIONS);
+    setBudgets(INITIAL_BUDGETS);
+    setChatMessages(INITIAL_AI_CHAT);
   };
 
   const updateUser = async (updates) => {
     try {
-      if (token && isBackendConnected) {
+      const activeToken = token || localStorage.getItem('ai_finance_token');
+      if (activeToken) {
         const res = await api.auth.updateProfile(updates);
         setUser(res.user);
         localStorage.setItem('ai_finance_user', JSON.stringify(res.user));
@@ -191,23 +249,33 @@ export const FinanceProvider = ({ children }) => {
 
   // Transaction Actions
   const addTransaction = async (newTx) => {
-    // If logged in, always use the server. Never pretend a local-only save
-    // succeeded, because it would disappear after a page refresh.
-    if (token) {
+    const activeToken = token || localStorage.getItem('ai_finance_token');
+    const parsedAmount = parseFloat(newTx.amount);
+    const txType = newTx.type || newTx.transaction_type || 'expense';
+
+    const payload = {
+      ...newTx,
+      amount: parsedAmount,
+      type: txType,
+      transaction_type: txType
+    };
+
+    if (activeToken) {
       try {
-        const result = await api.transactions.create(newTx);
-        if (!result?.transaction) {
+        const res = await api.transactions.create(payload);
+        if (!res?.transaction) {
           throw new Error('The server did not confirm that the transaction was saved.');
         }
-        const saved = {
-          ...result.transaction,
-          type: result.transaction.type || result.transaction.transaction_type
+        const created = {
+          ...res.transaction,
+          type: res.transaction.type || res.transaction.transaction_type || txType,
+          transaction_type: res.transaction.transaction_type || res.transaction.type || txType
         };
-        setTransactions(prev => [saved, ...prev.filter(tx => tx.id !== saved.id)]);
+        setTransactions(prev => [created, ...prev.filter(t => t.id !== created.id)]);
         setIsBackendConnected(true);
         setError(null);
-        await refreshData();
-        return saved;
+        await refreshData(activeToken);
+        return created;
       } catch (err) {
         console.error('API transaction add failed:', err);
         setError(err.message || 'Could not save the transaction to the server.');
@@ -215,11 +283,10 @@ export const FinanceProvider = ({ children }) => {
       }
     }
 
-    // Local-only mode is available only when the user is not logged in.
+    // Local fallback
     const created = {
-      ...newTx,
+      ...payload,
       id: `tx-${Date.now()}`,
-      amount: parseFloat(newTx.amount),
       status: 'Completed'
     };
     setTransactions(prev => [created, ...prev]);
@@ -227,10 +294,17 @@ export const FinanceProvider = ({ children }) => {
   };
 
   const updateTransaction = async (id, updatedData) => {
-    if (token && typeof id === 'number') {
+    const activeToken = token || localStorage.getItem('ai_finance_token');
+    const payload = {
+      ...updatedData,
+      type: updatedData.type || updatedData.transaction_type,
+      transaction_type: updatedData.transaction_type || updatedData.type
+    };
+
+    if (activeToken && typeof id === 'number') {
       try {
-        await api.transactions.update(id, updatedData);
-        await refreshData();
+        await api.transactions.update(id, payload);
+        await refreshData(activeToken);
         return;
       } catch (err) {
         console.error('API update failed:', err);
@@ -239,15 +313,16 @@ export const FinanceProvider = ({ children }) => {
       }
     }
 
-    if (token) throw new Error('This saved transaction cannot be updated offline.');
-    setTransactions(prev => prev.map(t => (t.id === id ? { ...t, ...updatedData, amount: parseFloat(updatedData.amount) } : t)));
+    if (activeToken) throw new Error('This saved transaction cannot be updated offline.');
+    setTransactions(prev => prev.map(t => (t.id === id ? { ...t, ...payload, amount: parseFloat(payload.amount) } : t)));
   };
 
   const deleteTransaction = async (id) => {
-    if (token && typeof id === 'number') {
+    const activeToken = token || localStorage.getItem('ai_finance_token');
+    if (activeToken && typeof id === 'number') {
       try {
         await api.transactions.delete(id);
-        await refreshData();
+        await refreshData(activeToken);
         return;
       } catch (err) {
         console.error('API delete failed:', err);
@@ -256,16 +331,32 @@ export const FinanceProvider = ({ children }) => {
       }
     }
 
-    if (token) throw new Error('This saved transaction cannot be deleted offline.');
+    if (activeToken) throw new Error('This saved transaction cannot be deleted offline.');
     setTransactions(prev => prev.filter(t => t.id !== id));
   };
 
   // Budget Actions
   const addBudget = async (newBudget) => {
-    if (token && isBackendConnected) {
+    const activeToken = token || localStorage.getItem('ai_finance_token');
+    const limitVal = parseFloat(newBudget.limit || newBudget.monthly_limit);
+    const payload = {
+      ...newBudget,
+      limit: limitVal,
+      monthly_limit: limitVal
+    };
+
+    if (activeToken) {
       try {
-        await api.budgets.createOrUpdate(newBudget);
-        await refreshData();
+        const res = await api.budgets.createOrUpdate(payload);
+        if (res.budget) {
+          const created = {
+            ...res.budget,
+            limit: res.budget.limit ?? res.budget.monthly_limit,
+            monthly_limit: res.budget.monthly_limit ?? res.budget.limit
+          };
+          setBudgets(prev => [...prev.filter(b => b.id !== created.id), created]);
+        }
+        await refreshData(activeToken);
         return;
       } catch (err) {
         console.warn('API budget add error:', err);
@@ -274,9 +365,8 @@ export const FinanceProvider = ({ children }) => {
 
     // Local fallback
     const created = {
-      ...newBudget,
+      ...payload,
       id: `b-${Date.now()}`,
-      limit: parseFloat(newBudget.limit),
       spent: 0,
       color: newBudget.color || '#10b981'
     };
@@ -284,21 +374,23 @@ export const FinanceProvider = ({ children }) => {
   };
 
   const updateBudget = async (id, newLimit) => {
-    if (token && isBackendConnected && typeof id === 'number') {
+    const activeToken = token || localStorage.getItem('ai_finance_token');
+    if (activeToken && typeof id === 'number') {
       try {
         await api.budgets.update(id, { limit: newLimit });
-        await refreshData();
+        await refreshData(activeToken);
         return;
       } catch (err) {
         console.warn('API budget update error:', err);
       }
     }
 
-    setBudgets(prev => prev.map(b => (b.id === id ? { ...b, limit: parseFloat(newLimit) } : b)));
+    setBudgets(prev => prev.map(b => (b.id === id ? { ...b, limit: parseFloat(newLimit), monthly_limit: parseFloat(newLimit) } : b)));
   };
 
   // AI Assistant Chat Actions
   const sendAIMessage = async (text) => {
+    const activeToken = token || localStorage.getItem('ai_finance_token');
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -311,7 +403,7 @@ export const FinanceProvider = ({ children }) => {
     };
     setChatMessages(prev => [...prev, userMsg]);
 
-    if (token && isBackendConnected) {
+    if (activeToken) {
       try {
         const res = await api.ai.chat(text);
         if (res.assistant_message) {
@@ -352,10 +444,11 @@ export const FinanceProvider = ({ children }) => {
   };
 
   const clearChat = async () => {
-    if (token && isBackendConnected) {
+    const activeToken = token || localStorage.getItem('ai_finance_token');
+    if (activeToken) {
       try {
         await api.ai.clearHistory();
-        await refreshData();
+        await refreshData(activeToken);
         return;
       } catch (err) {
         console.warn('Failed to clear chat via API:', err);

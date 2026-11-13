@@ -128,8 +128,54 @@ def run_tests():
     assert "text/csv" in res.content_type
     print("[PASS] /api/reports/export-csv passed")
 
+    print("\n--- 11. Testing Login with 'identifier' field ---")
+    id_login_payload = {
+        "identifier": "sarah@resistance.org",
+        "password": "secretpassword123"
+    }
+    res = client.post("/api/auth/login", json=id_login_payload)
+    assert res.status_code == 200, f"Identifier login failed: {res.data}"
+    print("[PASS] Login with 'identifier' passed")
+
+    print("\n--- 12. Testing CORS Preflight (OPTIONS) with Cache-Control ---")
+    res = client.open(
+        "/api/transactions",
+        method="OPTIONS",
+        headers={
+            "Origin": "https://ai-finance-assistant-frontend-plum.vercel.app",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "authorization, cache-control, content-type"
+        }
+    )
+    assert res.status_code in (200, 204), f"Preflight failed: {res.status_code}"
+    origin_header = res.headers.get("Access-Control-Allow-Origin")
+    assert origin_header == "https://ai-finance-assistant-frontend-plum.vercel.app", f"Wrong origin header: {origin_header}"
+    allow_headers = res.headers.get("Access-Control-Allow-Headers", "").lower()
+    assert "cache-control" in allow_headers, f"Cache-Control not allowed in: {allow_headers}"
+    print("[PASS] CORS preflight OPTIONS with Cache-Control passed")
+
+    print("\n--- 13. Testing Trailing Slash Route Resolution ---")
+    # GET /api/transactions/ without redirect
+    res = client.get("/api/transactions/", headers=headers)
+    assert res.status_code == 200, f"Expected 200 for trailing slash, got {res.status_code}"
+    print("[PASS] Trailing slash resolved with 200 OK (no redirect)")
+
+    print("\n--- 14. Testing Field Parity in Transactions and Budgets ---")
+    res = client.get("/api/transactions", headers=headers)
+    tx_list = json.loads(res.data)["transactions"]
+    if tx_list:
+        sample = tx_list[0]
+        assert "type" in sample and "transaction_type" in sample, f"Missing type parity: {sample}"
+        assert sample["type"] == sample["transaction_type"]
+    res = client.get("/api/budgets", headers=headers)
+    b_list = json.loads(res.data)["budgets"]
+    if b_list:
+        b_sample = b_list[0]
+        assert "limit" in b_sample and "monthly_limit" in b_sample, f"Missing budget limit parity: {b_sample}"
+    print("[PASS] Field parity verified for type/transaction_type and limit/monthly_limit")
+
     print("\n==========================================")
-    print(" ALL 10 TEST SUITES PASSED WITH 0 ERRORS! ")
+    print(" ALL 14 TEST SUITES PASSED WITH 0 ERRORS! ")
     print("==========================================\n")
 
 

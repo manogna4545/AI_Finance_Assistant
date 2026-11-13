@@ -124,7 +124,7 @@ def register():
 @auth_bp.route("/login", methods=["POST"])
 def login():
     data = request.get_json() or {}
-    identifier = data.get("email") or data.get("username") or ""
+    identifier = data.get("email") or data.get("username") or data.get("identifier") or ""
     identifier = identifier.strip().lower()
     password = data.get("password", "").strip()
 

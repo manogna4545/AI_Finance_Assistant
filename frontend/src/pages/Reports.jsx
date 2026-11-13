@@ -35,7 +35,7 @@ export const Reports = () => {
     const rows = transactions.map((t) => [
       t.id,
       `"${t.title.replace(/"/g, '""')}"`,
-      t.type,
+      t.type || t.transaction_type || 'expense',
       `"${t.category}"`,
       t.amount,
       t.date,

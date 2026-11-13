@@ -3,7 +3,12 @@
  * Automatically handles Authorization headers with JWT tokens.
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const rawBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+let cleanBase = String(rawBase).trim().replace(/\/+$/, '');
+if (!cleanBase.endsWith('/api')) {
+  cleanBase += '/api';
+}
+export const API_BASE_URL = cleanBase;
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem('ai_finance_token');
@@ -25,7 +30,9 @@ const handleResponse = async (res) => {
     } catch {
       // response wasn't JSON
     }
-    throw new Error(errMessage);
+    const error = new Error(errMessage);
+    error.status = res.status;
+    throw error;
   }
   return res.json();
 };
@@ -44,7 +51,12 @@ export const api = {
       fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: identifier, password })
+        body: JSON.stringify({
+          email: identifier,
+          username: identifier,
+          identifier,
+          password
+        })
       }).then(handleResponse),
 
     demoLogin: () =>

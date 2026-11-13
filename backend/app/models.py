@@ -28,9 +28,11 @@ class User(db.Model):
         return {
             "id": self.id,
             "username": self.username,
+            "name": self.username,
             "email": self.email,
             "currency": self.currency,
             "monthly_budget": self.monthly_budget,
+            "monthlyBudget": self.monthly_budget,
             "created_at": self.created_at.isoformat() if self.created_at else None
         }
 
@@ -85,6 +87,7 @@ class Transaction(db.Model):
             "title": self.title,
             "amount": self.amount,
             "transaction_type": self.transaction_type,
+            "type": self.transaction_type,
             "category": self.category,
             "date": self.date.isoformat() if self.date else None,
             "description": self.description,
@@ -114,6 +117,7 @@ class Budget(db.Model):
             "user_id": self.user_id,
             "category": self.category,
             "monthly_limit": self.monthly_limit,
+            "limit": self.monthly_limit,
             "spent": round(current_spent, 2),
             "color": self.color,
             "month": self.month,

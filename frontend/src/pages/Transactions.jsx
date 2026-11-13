@@ -30,12 +30,13 @@ export const Transactions = ({ onOpenTransactionModal }) => {
 
   // Filtered transactions
   const filtered = transactions.filter((t) => {
+    const txType = t.type || t.transaction_type || 'expense';
     const matchesSearch =
       t.title.toLowerCase().includes(search.toLowerCase()) ||
       (t.description && t.description.toLowerCase().includes(search.toLowerCase())) ||
       t.category.toLowerCase().includes(search.toLowerCase());
 
-    const matchesType = typeFilter === 'all' || t.type === typeFilter;
+    const matchesType = typeFilter === 'all' || txType === typeFilter;
     const matchesCategory = categoryFilter === 'all' || t.category === categoryFilter;
 
     return matchesSearch && matchesType && matchesCategory;
@@ -182,107 +183,110 @@ export const Transactions = ({ onOpenTransactionModal }) => {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((tx) => (
-                  <tr key={tx.id}>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div
+                {filtered.map((tx) => {
+                  const isIncome = (tx.type || tx.transaction_type) === 'income';
+                  return (
+                    <tr key={tx.id}>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <div
+                            style={{
+                              width: '36px',
+                              height: '36px',
+                              borderRadius: 'var(--radius-md)',
+                              background: isIncome ? 'var(--income-bg)' : 'var(--expense-bg)',
+                              color: isIncome ? 'var(--income-green)' : 'var(--expense-red)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0
+                            }}
+                          >
+                            {isIncome ? <ArrowUpRight size={18} /> : <ArrowDownRight size={18} />}
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 700, color: 'var(--brand-forest)' }}>
+                              {tx.title}
+                            </div>
+                            {tx.description && (
+                              <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                                {tx.description}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+
+                      <td>
+                        <span
                           style={{
-                            width: '36px',
-                            height: '36px',
-                            borderRadius: 'var(--radius-md)',
-                            background: tx.type === 'income' ? 'var(--income-bg)' : 'var(--expense-bg)',
-                            color: tx.type === 'income' ? 'var(--income-green)' : 'var(--expense-red)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexShrink: 0
+                            fontSize: '0.78rem',
+                            fontWeight: 600,
+                            padding: '3px 10px',
+                            borderRadius: 'var(--radius-full)',
+                            backgroundColor: 'var(--bg-subtle)',
+                            color: 'var(--brand-forest)',
+                            border: '1px solid var(--border-green)'
                           }}
                         >
-                          {tx.type === 'income' ? <ArrowUpRight size={18} /> : <ArrowDownRight size={18} />}
-                        </div>
-                        <div>
-                          <div style={{ fontWeight: 700, color: 'var(--brand-forest)' }}>
-                            {tx.title}
-                          </div>
-                          {tx.description && (
-                            <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-                              {tx.description}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </td>
+                          {tx.category}
+                        </span>
+                      </td>
 
-                    <td>
-                      <span
-                        style={{
-                          fontSize: '0.78rem',
-                          fontWeight: 600,
-                          padding: '3px 10px',
-                          borderRadius: 'var(--radius-full)',
-                          backgroundColor: 'var(--bg-subtle)',
-                          color: 'var(--brand-forest)',
-                          border: '1px solid var(--border-green)'
-                        }}
-                      >
-                        {tx.category}
-                      </span>
-                    </td>
-
-                    <td>
-                      <span
-                        style={{
-                          fontSize: '0.74rem',
-                          fontWeight: 700,
-                          textTransform: 'uppercase',
-                          color: tx.type === 'income' ? 'var(--income-green)' : 'var(--expense-red)'
-                        }}
-                      >
-                        {tx.type}
-                      </span>
-                    </td>
-
-                    <td style={{ color: 'var(--text-muted)', fontSize: '0.84rem' }}>
-                      {tx.date}
-                    </td>
-
-                    <td style={{ textAlign: 'right' }}>
-                      <span
-                        style={{
-                          fontSize: '1rem',
-                          fontWeight: 800
-                        }}
-                        className={tx.type === 'income' ? 'amount-income' : 'amount-expense'}
-                      >
-                        {tx.type === 'income' ? '+' : '-'}{currency}{Number(tx.amount).toFixed(2)}
-                      </span>
-                    </td>
-
-                    <td style={{ textAlign: 'center' }}>
-                      <div style={{ display: 'inline-flex', gap: '8px' }}>
-                        <button
-                          onClick={() => handleEdit(tx)}
-                          className="topbar-btn"
-                          style={{ width: '30px', height: '30px' }}
-                          title="Edit transaction"
-                          aria-label="Edit"
+                      <td>
+                        <span
+                          style={{
+                            fontSize: '0.74rem',
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            color: isIncome ? 'var(--income-green)' : 'var(--expense-red)'
+                          }}
                         >
-                          <Edit2 size={14} color="var(--brand-forest)" />
-                        </button>
-                        <button
-                          onClick={() => deleteTransaction(tx.id)}
-                          className="topbar-btn"
-                          style={{ width: '30px', height: '30px', color: 'var(--expense-red)' }}
-                          title="Delete transaction"
-                          aria-label="Delete"
+                          {isIncome ? 'income' : 'expense'}
+                        </span>
+                      </td>
+
+                      <td style={{ color: 'var(--text-muted)', fontSize: '0.84rem' }}>
+                        {tx.date}
+                      </td>
+
+                      <td style={{ textAlign: 'right' }}>
+                        <span
+                          style={{
+                            fontSize: '1rem',
+                            fontWeight: 800
+                          }}
+                          className={isIncome ? 'amount-income' : 'amount-expense'}
                         >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          {isIncome ? '+' : '-'}{currency}{Number(tx.amount).toFixed(2)}
+                        </span>
+                      </td>
+
+                      <td style={{ textAlign: 'center' }}>
+                        <div style={{ display: 'inline-flex', gap: '8px' }}>
+                          <button
+                            onClick={() => handleEdit(tx)}
+                            className="topbar-btn"
+                            style={{ width: '30px', height: '30px' }}
+                            title="Edit transaction"
+                            aria-label="Edit"
+                          >
+                            <Edit2 size={14} color="var(--brand-forest)" />
+                          </button>
+                          <button
+                            onClick={() => deleteTransaction(tx.id)}
+                            className="topbar-btn"
+                            style={{ width: '30px', height: '30px', color: 'var(--expense-red)' }}
+                            title="Delete transaction"
+                            aria-label="Delete"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -1,6 +1,7 @@
 import os
 import logging
-from flask import Flask, jsonify
+from datetime import timedelta
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
@@ -22,6 +23,9 @@ def create_app(config_override=None):
     """
     app = Flask(__name__)
 
+    # Allow URLs with or without trailing slashes without redirecting
+    app.url_map.strict_slashes = False
+
     # Logging setup
     logging.basicConfig(
         level=logging.INFO,
@@ -32,12 +36,16 @@ def create_app(config_override=None):
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
     app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY", "dev-jwt-secret-key-change-in-production")
     
+    # Token expiration: default 30 days to avoid premature 401 logouts
+    jwt_exp_days = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES_DAYS", "30"))
+    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=jwt_exp_days)
+    
     # Database URL configuration (Supports PostgreSQL and SQLite)
     db_url = os.getenv("DATABASE_URL", "sqlite:///finance_assistant.db")
     # Fix for SQLAlchemy 1.4+ with postgres:// uri
     if db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql+psycopg://", 1)
-    elif db_url.startswith("postgresql://"):
+    elif db_url.startswith("postgresql://") and not db_url.startswith("postgresql+"):
         db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
         
     app.config["SQLALCHEMY_DATABASE_URI"] = db_url
@@ -51,15 +59,60 @@ def create_app(config_override=None):
     bcrypt.init_app(app)
     jwt.init_app(app)
 
-    # CORS configuration
-    frontend_url = os.getenv("FRONTEND_URL", "*")
+    # Allowed CORS origins
+    default_origins = [
+        "https://ai-finance-assistant-frontend-plum.vercel.app",
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+    ]
+    frontend_env = os.getenv("FRONTEND_URL", "").strip()
+    if frontend_env and frontend_env != "*":
+        for o in frontend_env.split(","):
+            clean_o = o.strip().rstrip("/")
+            if clean_o and clean_o not in default_origins:
+                default_origins.append(clean_o)
+
+    allowed_headers = [
+        "Content-Type",
+        "Authorization",
+        "Cache-Control",
+        "Pragma",
+        "X-Requested-With",
+        "Accept",
+        "Origin"
+    ]
+    allowed_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]
+
+    # Flask-CORS initialization with explicit origin list
     CORS(
         app,
-        resources={r"/api/*": {"origins": "*"}},
+        resources={r"/*": {"origins": default_origins}},
         supports_credentials=True,
-        allow_headers=["Content-Type", "Authorization"],
-        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+        allow_headers=allowed_headers,
+        methods=allowed_methods,
+        expose_headers=["Content-Type", "Authorization"]
     )
+
+    # Global after_request CORS guarantee for all responses (including 401, 404, 500 and OPTIONS)
+    @app.after_request
+    def set_cors_headers(response):
+        origin = request.headers.get("Origin")
+        if origin:
+            # Match explicitly allowed origins, Vercel preview URLs, or local development
+            is_allowed = (
+                origin in default_origins
+                or origin.endswith(".vercel.app")
+                or "localhost" in origin
+                or "127.0.0.1" in origin
+            )
+            if is_allowed:
+                response.headers["Access-Control-Allow-Origin"] = origin
+                response.headers["Access-Control-Allow-Credentials"] = "true"
+                response.headers["Access-Control-Allow-Methods"] = ", ".join(allowed_methods)
+                response.headers["Access-Control-Allow-Headers"] = ", ".join(allowed_headers)
+        return response
 
     # JWT Error Handlers
     @jwt.unauthorized_loader
