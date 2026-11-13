@@ -1,6 +1,7 @@
 # AI Finance Assistant 📊💡
 
 A full-stack, responsive, and secure personal finance management web application featuring automated expense tracking, category budgeting, machine learning spending predictions, and an interactive AI financial advisor.
+
 Live Demo: https://ai-finance-assistant-frontend-plum.vercel.app/
 ---
 
