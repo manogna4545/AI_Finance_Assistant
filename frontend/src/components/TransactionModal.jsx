@@ -15,6 +15,7 @@ export const TransactionModal = ({ isOpen, onClose, editTransaction = null }) =>
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [description, setDescription] = useState('');
   const [error, setError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (editTransaction) {
@@ -46,8 +47,6 @@ export const TransactionModal = ({ isOpen, onClose, editTransaction = null }) =>
   };
 
   if (!isOpen) return null;
-
-  const [isSaving, setIsSaving] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
