@@ -44,7 +44,7 @@ export const api = {
       fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier, password })
+        body: JSON.stringify({ email: identifier, password })
       }).then(handleResponse),
 
     demoLogin: () =>
