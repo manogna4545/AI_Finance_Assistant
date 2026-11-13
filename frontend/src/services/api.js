@@ -77,7 +77,7 @@ export const api = {
     getAll: (params = {}) => {
       const query = new URLSearchParams(params).toString();
       const url = `${API_BASE_URL}/transactions${query ? `?${query}` : ''}`;
-      return fetch(url, { headers: getAuthHeaders() }).then(handleResponse);
+      return fetch(url, { method: 'GET', headers: { ...getAuthHeaders(), 'Cache-Control': 'no-cache' }, cache: 'no-store' }).then(handleResponse);
     },
 
     create: (data) =>
