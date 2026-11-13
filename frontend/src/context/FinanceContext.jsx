@@ -114,29 +114,23 @@ export const FinanceProvider = ({ children }) => {
     }
   }, [token]);
 
-  // Initial authentication verification on load
+  // Load live data whenever the stored/login token becomes available.
   useEffect(() => {
-    const initAuth = async () => {
-      const savedToken = localStorage.getItem('ai_finance_token');
-      if (savedToken) {
-        setToken(savedToken);
-        setIsAuthenticated(true);
-        try {
-          await api.checkHealth();
-          setIsBackendConnected(true);
-          refreshData();
-        } catch {
-          setIsBackendConnected(false);
-        }
-      } else {
-        // Test backend availability silently
-        api.checkHealth()
-          .then(() => setIsBackendConnected(true))
-          .catch(() => setIsBackendConnected(false));
-      }
-    };
-    initAuth();
-  }, [refreshData]);
+    const savedToken = localStorage.getItem('ai_finance_token');
+    if (!token && savedToken) {
+      setToken(savedToken);
+      setIsAuthenticated(true);
+      return;
+    }
+
+    if (token) {
+      refreshData();
+    } else {
+      api.checkHealth()
+        .then(() => setIsBackendConnected(true))
+        .catch(() => setIsBackendConnected(false));
+    }
+  }, [token, refreshData]);
 
   // Authentication Actions
   const handleAuthSuccess = (newToken, newUser) => {
